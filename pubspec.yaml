@@ -19,17 +19,19 @@ dependencies:
   http: ^0.13.6
   json_annotation: ^4.9.0
   equatable: ^2.0.5
-  device_info_plus: ^8.1.0
+  device_info_plus: ^12.3.0
+  win32: ^5.15.0
+  responsive_sizer: ^3.3.1
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   build_runner: ^2.4.6
   json_serializable: ^6.6.1
-  flutter_launcher_icons: ^0.9.0
+  flutter_launcher_icons: ^0.14.4
 
 flutter:
   uses-material-design: true
-flutter_icons:
+flutter_launcher_icons:
+  android: "launcher_icon"
   image_path: assets/icon/launcher_icon.png
-  android: true

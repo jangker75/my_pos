@@ -8,6 +8,8 @@ class TransactionModel {
   final String status;
   final String createdAt;
   final String customer;
+  final String? paymentMethod;
+  final int? synced;
 
   TransactionModel({
     this.id,
@@ -16,10 +18,12 @@ class TransactionModel {
     required this.total,
     required this.status,
     required this.createdAt,
+    this.paymentMethod,
+    this.synced,
     this.customer = '-',
   });
 
-  /// Helper to create a new transaction with generated txnNumber and status in_progress
+  /// Helper to create a new transaction with generated txnNumber and status on progress
   factory TransactionModel.createNew(
       {required List<Map<String, dynamic>> itemsList,
       required double total,
@@ -30,9 +34,10 @@ class TransactionModel {
       txnNumber: txn,
       items: jsonEncode(itemsList),
       total: total,
-      status: 'in_progress',
+      status: 'on progress',
       createdAt: now.toIso8601String(),
       customer: customer,
+      synced: 0,
     );
   }
 
@@ -72,11 +77,15 @@ class TransactionModel {
           : (json['total'] is double
               ? json['total'] as double
               : double.tryParse(json['total'].toString()) ?? 0.0),
-      status: json['status'] ?? 'in_progress',
+      status: json['status'] ?? 'on progress',
       createdAt: json['createdAt'] ??
           json['created_at'] ??
           DateTime.now().toIso8601String(),
       customer: json['customer'] ?? json['customer'] ?? '-',
+      paymentMethod: json['paymentMethod'] ?? json['payment_method'] ?? null,
+      synced: json['synced'] is int
+          ? json['synced'] as int
+          : (json['synced'] == null ? null : int.tryParse(json['synced'].toString())),
     );
   }
 
@@ -88,5 +97,7 @@ class TransactionModel {
         'status': status,
         'createdAt': createdAt,
         'customer': customer,
+        'paymentMethod': paymentMethod,
+        if (synced != null) 'synced': synced,
       };
 }

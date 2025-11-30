@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:responsive_sizer/responsive_sizer.dart';
 import '../models/transaction_model.dart';
 import '../data/transaction_db.dart';
+import '../theme.dart';
 
 class TransactionDetailPage extends StatefulWidget {
   final TransactionModel model;
@@ -24,7 +26,107 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
   }
 
   Future<void> _changeStatus(String status) async {
-    await _db.updateStatusByTxn(widget.model.txnNumber, status);
+    String? paymentMethod;
+
+    if (status == 'paid') {
+      paymentMethod = await showDialog<String>(
+        context: context,
+        builder: (ctx) {
+          String selected = 'cash';
+          return StatefulBuilder(builder: (ctx2, setStateDialog) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              titlePadding: EdgeInsets.fromLTRB(24, 20, 24, 0),
+              contentPadding:
+                  EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              actionsPadding:
+                  EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              title: Text(
+                'Pilih Metode Bayar',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                  color: AppColors.brandDark,
+                ),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Payment Method',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.brandDark,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: AppColors.brandDark.withOpacity(0.15),
+                      ),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        isExpanded: true,
+                        value: selected,
+                        items: const [
+                          DropdownMenuItem(
+                              value: 'cash', child: Text('Cash')),
+                          DropdownMenuItem(
+                              value: 'qris', child: Text('QRIS')),
+                          DropdownMenuItem(
+                              value: 'transfer', child: Text('Transfer')),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) {
+                            setStateDialog(() {
+                              selected = v;
+                            });
+                          }
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(null),
+                  child: Text(
+                    'Batal',
+                    style: TextStyle(color: Colors.grey[700]),
+                  ),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.brandYellow,
+                    foregroundColor: AppColors.brandDark,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                  onPressed: () => Navigator.of(ctx).pop(selected),
+                  child: Text('Simpan'),
+                ),
+              ],
+            );
+          });
+        },
+      );
+
+      if (paymentMethod == null) {
+        return;
+      }
+    }
+
+    await _db.updateStatusByTxn(widget.model.txnNumber, status, paymentMethod);
     // For simplicity, pop with result then caller will refresh
     Navigator.of(context).pop(true);
   }
@@ -38,8 +140,14 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
         '${dt.year.toString().padLeft(4, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')}';
     return Scaffold(
       appBar: AppBar(
-        title: Text('Transaksi ${model.txnNumber}'),
+        backgroundColor: AppColors.brandDark,
+        iconTheme: IconThemeData(color: AppColors.brandYellow),
+        title: Text('Transaksi ${model.txnNumber}',
+            style: TextStyle(color: AppColors.brandYellow)),
         actions: [
+          model.status != 'on progress'
+              ? SizedBox.shrink()
+              :
           PopupMenuButton<String>(
             onSelected: (v) async {
               if (v == 'paid') await _changeStatus('paid');
@@ -53,18 +161,18 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(12.0),
+        padding: EdgeInsets.all(3.w),
         children: [
           Text(_formatCurrency(model.total),
               style: TextStyle(
-                  fontSize: 24,
-                  color: Colors.blue[800],
+                  fontSize: 24.sp,
+                  color: AppColors.brandDark,
                   fontWeight: FontWeight.bold)),
-          SizedBox(height: 4),
+          SizedBox(height: 0.6.h),
           Row(
             children: [
               Expanded(child: Text(_fmt(_parse(model.createdAt)))),
-              SizedBox(width: 8),
+              SizedBox(width: 2.w),
               Builder(builder: (_) {
                 String statusText;
                 Color statusColor;
@@ -79,14 +187,32 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
                   statusColor = Colors.orange;
                 }
                 return Chip(
-                    label:
-                        Text(statusText, style: TextStyle(color: Colors.white)),
-                    backgroundColor: statusColor);
+                  label: Text(
+                    statusText,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  backgroundColor: statusColor,
+                  padding:
+                      EdgeInsets.symmetric(horizontal: 2.w, vertical: 0.8.h),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: BorderSide.none,
+                  ),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                );
               }),
             ],
           ),
-          SizedBox(height: 12),
+          SizedBox(height: 1.6.h),
           Card(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            elevation: 1,
+            margin: EdgeInsets.zero,
             child: Column(
               children: items.map((it) {
                 final qty = it['qty'] ?? 0;
@@ -96,42 +222,59 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
                 return Column(
                   children: [
                     ListTile(
-                      title: Text('${it['name']}'),
-                      subtitle: Text('${qty} x ${price}'),
-                      trailing: Text(_formatCurrency(line.toDouble())),
+                      title: Text('${it['name']}',
+                          style: TextStyle(fontSize: 18.sp)),
+                      subtitle: Text('${qty} x ${price}',
+                          style: TextStyle(fontSize: 16.sp)),
+                      trailing: Text(
+                        _formatCurrency(line.toDouble()),
+                        style: TextStyle(
+                          fontSize: 16.sp,
+                          color: AppColors.brandDark,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
-                    Divider(height: 1),
+                    if (it != items.last)
+                      Divider(
+                        height: 1,
+                        thickness: 0.5,
+                        color: Colors.grey.shade300,
+                      ),
                   ],
                 );
               }).toList(),
             ),
           ),
-          SizedBox(height: 12),
-          Text('Detil Pembayaran',
-              style: TextStyle(fontWeight: FontWeight.bold)),
-          SizedBox(height: 8),
+          SizedBox(height: 1.6.h),
+          Text('Detail Pembayaran',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16.sp)),
+          SizedBox(height: 1.h),
           Card(
             child: Padding(
-              padding: const EdgeInsets.all(12.0),
+              padding: EdgeInsets.all(3.w),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(_fmt(_parse(model.createdAt))),
-                  SizedBox(height: 4),
-                  Text('Tunai'),
-                  SizedBox(height: 8),
+                  Text(_fmt(_parse(model.createdAt)),
+                      style: TextStyle(fontSize: 16.sp)),
+                  SizedBox(height: 0.6.h),
+                  Text(model.paymentMethod ?? '-', style: TextStyle(fontSize: 16.sp)),
+                  SizedBox(height: 1.h),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Total'),
-                      Text(_formatCurrency(model.total)),
+                      Text('Total', style: TextStyle(fontSize: 16.sp)),
+                      Text(_formatCurrency(model.total),
+                          style: TextStyle(
+                              fontSize: 18.sp, fontWeight: FontWeight.bold)),
                     ],
                   ),
                 ],
               ),
             ),
           ),
-          SizedBox(height: 24),
+          SizedBox(height: 3.h),
         ],
       ),
     );

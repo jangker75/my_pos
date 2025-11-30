@@ -70,7 +70,7 @@ class _PosPageImplState extends State<PosPageImpl> {
         Duration(milliseconds: 200), () => txBloc.add(LoadTransactions()));
     setState(() => cart.clear());
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Transaksi ${t.txnNumber} dibuat (in_progress)')));
+        content: Text('Transaksi ${t.txnNumber} dibuat (on progress)')));
   }
 
   Future<void> _openEditTransactionDialog(TransactionModel txn) async {

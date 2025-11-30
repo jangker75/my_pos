@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import '../theme.dart';
+import 'package:responsive_sizer/responsive_sizer.dart';
 import '../data/transaction_db.dart';
 import '../models/transaction_model.dart';
 import '../data/product_db.dart';
@@ -14,6 +16,27 @@ class NewTransactionPage extends StatefulWidget {
 
 class _NewTransactionPageState extends State<NewTransactionPage> {
   final _customerController = TextEditingController();
+  final List<String> _customerSuggestions = [
+    'umum',
+    'novi',
+    'mouchi',
+    'intan',
+    'aji',
+    'hana',
+    'vivi',
+    'ayu',
+    'taufik',
+    'opik',
+    'alshad',
+    'zea',
+    'nur',
+    'adel',
+    'bunda',
+    'mami/papi baim',
+    'jafier',
+  ];
+  final FocusNode _customerFocusNode = FocusNode();
+  final GlobalKey _customerFieldKey = GlobalKey();
   final _db = TransactionDb();
   final _productDb = ProductDb();
   List<Map<String, dynamic>> _products = [];
@@ -24,6 +47,7 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
     super.initState();
     _loadProducts();
     _customerController.text = 'umum';
+    _customerFocusNode.addListener(_onCustomerFocus);
     // if initial transaction provided, populate fields
     if (widget.initial != null) {
       final m = widget.initial!;
@@ -53,11 +77,64 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
     setState(() {});
   }
 
+
   @override
   void dispose() {
     _customerController.removeListener(_onCustomerChanged);
+    _customerFocusNode.removeListener(_onCustomerFocus);
     _customerController.dispose();
+    _customerFocusNode.dispose();
     super.dispose();
+  }
+
+  void _onCustomerFocus() {
+    // rebuild when focus changes so Autocomplete can show options on focus
+    setState(() {});
+  }
+
+  Future<void> _showCustomerDropdown(BuildContext context) async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(12))),
+      builder: (ctx) {
+        final height = MediaQuery.of(ctx).size.height * 0.5;
+        return Container(
+          height: height,
+          child: Column(
+            children: [
+              SizedBox(height: 1.h),
+              Container(
+                width: 10.w,
+                height: 0.8.h,
+                decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2)),
+              ),
+              SizedBox(height: 1.h),
+              Expanded(
+                child: ListView.separated(
+                  itemCount: _customerSuggestions.length,
+                  separatorBuilder: (_, __) => Divider(height: 1),
+                  itemBuilder: (context, idx) {
+                    final s = _customerSuggestions[idx];
+                    return ListTile(
+                      title: Text(s),
+                      onTap: () => Navigator.of(ctx).pop(s),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (selected != null) {
+      _customerController.text = selected;
+      setState(() {});
+    }
   }
 
   Future<void> _loadProducts() async {
@@ -111,7 +188,7 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
           txnNumber: widget.initial!.txnNumber,
           items: jsonEncode(_cart),
           total: total.toDouble(),
-          status: 'in_progress',
+          status: 'on progress',
           createdAt: widget.initial!.createdAt,
           customer: _customerController.text.trim(),
         );
@@ -140,39 +217,83 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('New Transaction'),
-        backgroundColor: Colors.blue[800],
+        title: Text('New Transaction', style: TextStyle(color: AppColors.brandYellow)),
+        backgroundColor: AppColors.brandDark,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back),
+          icon: Icon(Icons.arrow_back, color: AppColors.brandYellow),
           onPressed: () => Navigator.pop(context),
         ),
       ),
       body: Padding(
-        padding: const EdgeInsets.all(12.0),
+        padding: EdgeInsets.all(3.w),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Customer field
             Text('Customer', style: TextStyle(fontWeight: FontWeight.bold)),
-            SizedBox(height: 8),
-            TextField(
-              controller: _customerController,
-              decoration: InputDecoration(
-                hintText: 'Nama pelanggan',
-                border: OutlineInputBorder(),
-                contentPadding:
-                    EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                suffixIcon: _customerController.text.isNotEmpty
-                    ? IconButton(
-                        icon: Icon(Icons.clear),
-                        onPressed: () {
-                          _customerController.clear();
-                        },
-                      )
-                    : null,
-              ),
+            SizedBox(height: 1.2.h),
+            Autocomplete<String>(
+              optionsBuilder: (TextEditingValue textEditingValue) {
+                final input = textEditingValue.text.toLowerCase();
+                if (input.isEmpty) return _customerSuggestions;
+                return _customerSuggestions.where((s) =>
+                    s.toLowerCase().contains(input));
+              },
+              onSelected: (String selection) {
+                // copy selection to primary controller used elsewhere
+                _customerController.text = selection;
+                // rebuild to update suffix icon
+                setState(() {});
+              },
+              fieldViewBuilder: (context, textEditingController, focusNode,
+                  onFieldSubmitted) {
+                // keep internal autocomplete controller and our _customerController
+                // in sync so existing logic keeps working
+                // add a one-time listener to propagate changes
+                if (textEditingController.text != _customerController.text) {
+                  textEditingController.text = _customerController.text;
+                }
+
+                textEditingController.addListener(() {
+                  if (_customerController.text != textEditingController.text) {
+                    _customerController.text = textEditingController.text;
+                  }
+                });
+
+                return TextField(
+                  key: _customerFieldKey,
+                  controller: textEditingController,
+                  focusNode: _customerFocusNode,
+                  onSubmitted: (_) => onFieldSubmitted(),
+                  decoration: InputDecoration(
+                    hintText: 'Nama pelanggan',
+                    border: OutlineInputBorder(),
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 3.w, vertical: 1.2.h),
+                    suffixIcon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (textEditingController.text.isNotEmpty)
+                          IconButton(
+                            icon: Icon(Icons.clear),
+                            onPressed: () {
+                              textEditingController.clear();
+                              _customerController.clear();
+                              // update UI
+                              setState(() {});
+                            },
+                          ),
+                        IconButton(
+                          icon: Icon(Icons.arrow_drop_down),
+                          onPressed: () => _showCustomerDropdown(context),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
             ),
-            SizedBox(height: 12),
+            SizedBox(height: 1.8.h),
 
             // Items header
             Row(
@@ -190,21 +311,52 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
                             builder: (ctx) {
                               final controller = TextEditingController();
                               return AlertDialog(
-                                title: Text('Cari Produk'),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                titlePadding:
+                                    EdgeInsets.fromLTRB(24, 20, 24, 0),
+                                contentPadding: EdgeInsets.fromLTRB(
+                                    24, 12, 24, 4),
+                                actionsPadding:
+                                    EdgeInsets.fromLTRB(16, 0, 16, 12),
+                                title: Text(
+                                  'Cari Produk',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 18,
+                                    color: AppColors.brandDark,
+                                  ),
+                                ),
                                 content: TextField(
                                   controller: controller,
                                   decoration: InputDecoration(
-                                      hintText: 'Ketik nama produk'),
+                                    hintText: 'Ketik nama produk',
+                                  ),
                                   autofocus: true,
                                 ),
                                 actions: [
                                   TextButton(
                                       onPressed: () => Navigator.of(ctx).pop(),
-                                      child: Text('Batal')),
-                                  TextButton(
-                                      onPressed: () => Navigator.of(ctx)
-                                          .pop(controller.text.trim()),
-                                      child: Text('Cari')),
+                                      child: Text(
+                                        'Batal',
+                                        style:
+                                            TextStyle(color: Colors.grey[700]),
+                                      )),
+                                  ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.brandYellow,
+                                      foregroundColor: AppColors.brandDark,
+                                      elevation: 0,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(20),
+                                      ),
+                                    ),
+                                    onPressed: () => Navigator.of(ctx)
+                                        .pop(controller.text.trim()),
+                                    child: Text('Cari'),
+                                  ),
                                 ],
                               );
                             });
@@ -302,13 +454,13 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
               child: Card(
                 elevation: 1,
                 child: ListView.separated(
-                  padding: EdgeInsets.all(8),
+                  padding: EdgeInsets.all(2.w),
                   itemCount: _cart.length,
                   separatorBuilder: (_, __) => Divider(height: 1),
                   itemBuilder: (context, index) {
                     final it = _cart[index];
                     return ListTile(
-                      leading: CircleAvatar(backgroundColor: Colors.grey[200]),
+                      // leading: CircleAvatar(backgroundColor: AppColors.brandYellow.withOpacity(0.12)),
                       title: Text(it['name']),
                       subtitle: Builder(builder: (_) {
                         final discountType =
@@ -336,17 +488,17 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
                               });
                             },
                           ),
-                          SizedBox(width: 8),
+                          SizedBox(width: 2.w),
                           Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
-                              Text(
+                                Text(
                                   _formatCurrency((it['qty'] as int) *
-                                      (it['price'] as int)),
+                                    (it['price'] as int)),
                                   style: TextStyle(
-                                      color: Colors.blue,
-                                      fontWeight: FontWeight.bold)),
+                                    color: AppColors.brandDark,
+                                    fontWeight: FontWeight.bold)),
                               Builder(builder: (_) {
                                 final discountType =
                                     (it['discountType'] as String?) ??
@@ -362,14 +514,14 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
                                   return Column(
                                     crossAxisAlignment: CrossAxisAlignment.end,
                                     children: [
-                                      if (discountType == 'percentage')
+                                        if (discountType == 'percentage')
                                         Text('- ${raw}%',
-                                            style: TextStyle(
-                                                color: Colors.red,
-                                                fontSize: 12)),
-                                      Text('- ${_formatCurrency(discAmount)}',
                                           style: TextStyle(
-                                              color: Colors.red, fontSize: 12)),
+                                            color: Colors.red,
+                                            fontSize: 12.sp)),
+                                        Text('- ${_formatCurrency(discAmount)}',
+                                          style: TextStyle(
+                                            color: Colors.red, fontSize: 12.sp)),
                                     ],
                                   );
                                 }
@@ -382,8 +534,8 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
                       onTap: () async {
                         // open edit qty/discount dialog
                         final result = await showDialog<Map<String, dynamic>>(
-                            context: context,
-                            builder: (ctx) {
+                          context: context,
+                          builder: (ctx) {
                               final qtyController = TextEditingController(
                                   text: it['qty'].toString());
                               final discController = TextEditingController(
@@ -393,49 +545,105 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
                               return StatefulBuilder(
                                   builder: (ctx2, setStateDialog) {
                                 return AlertDialog(
-                                  title: Text('Edit ${it['name']}'),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  titlePadding:
+                                      EdgeInsets.fromLTRB(24, 20, 24, 0),
+                                  contentPadding: EdgeInsets.fromLTRB(
+                                      24, 12, 24, 4),
+                                  actionsPadding: EdgeInsets.fromLTRB(
+                                      16, 0, 16, 12),
+                                  title: Text(
+                                    'Edit ${it['name']}',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 18,
+                                      color: AppColors.brandDark,
+                                    ),
+                                  ),
                                   content: Column(
                                     mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
                                     children: [
+                                      Text(
+                                        'Qty',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.brandDark,
+                                        ),
+                                      ),
+                                      SizedBox(height: 4),
                                       TextField(
                                         controller: qtyController,
                                         keyboardType: TextInputType.number,
-                                        decoration:
-                                            InputDecoration(labelText: 'Qty'),
+                                        decoration: InputDecoration(
+                                          isDense: true,
+                                          border: UnderlineInputBorder(),
+                                        ),
                                       ),
-                                      SizedBox(height: 8),
-                                      Row(
-                                        children: [
-                                          Text('Tipe Diskon:'),
-                                          SizedBox(width: 12),
-                                          DropdownButton<String>(
+                                      SizedBox(height: 1.4.h),
+                                      Text(
+                                        'Tipe Diskon',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.brandDark,
+                                        ),
+                                      ),
+                                      SizedBox(height: 4),
+                                      Container(
+                                        padding: EdgeInsets.symmetric(
+                                            horizontal: 12),
+                                        decoration: BoxDecoration(
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                          border: Border.all(
+                                            color: AppColors.brandDark
+                                                .withOpacity(0.15),
+                                          ),
+                                        ),
+                                        child: DropdownButtonHideUnderline(
+                                          child: DropdownButton<String>(
+                                            isExpanded: true,
                                             value: selectedType,
-                                            items: [
+                                            items: const [
                                               DropdownMenuItem(
                                                   value: 'nominal',
                                                   child: Text('Nominal')),
                                               DropdownMenuItem(
                                                   value: 'percentage',
-                                                  child: Text('Percentage')),
+                                                  child:
+                                                      Text('Percentage')),
                                             ],
                                             onChanged: (v) {
-                                              if (v != null)
+                                              if (v != null) {
                                                 setStateDialog(() {
                                                   selectedType = v;
                                                 });
+                                              }
                                             },
                                           ),
-                                        ],
+                                        ),
                                       ),
-                                      SizedBox(height: 8),
+                                      SizedBox(height: 1.4.h),
+                                      Text(
+                                        selectedType == 'percentage'
+                                            ? 'Discount (%)'
+                                            : 'Discount (Rp)',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.brandDark,
+                                        ),
+                                      ),
+                                      SizedBox(height: 4),
                                       TextField(
                                         controller: discController,
                                         keyboardType: TextInputType.number,
                                         decoration: InputDecoration(
-                                            labelText:
-                                                selectedType == 'percentage'
-                                                    ? 'Discount (%)'
-                                                    : 'Discount (Rp)'),
+                                          isDense: true,
+                                          border: UnderlineInputBorder(),
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -443,22 +651,38 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
                                     TextButton(
                                         onPressed: () =>
                                             Navigator.of(ctx).pop(),
-                                        child: Text('Batal')),
-                                    TextButton(
-                                        onPressed: () {
-                                          final q = int.tryParse(
-                                                  qtyController.text) ??
-                                              it['qty'];
-                                          final d = int.tryParse(
-                                                  discController.text) ??
-                                              (it['discount'] ?? 0);
-                                          Navigator.of(ctx).pop({
-                                            'qty': q,
-                                            'discount': d,
-                                            'discountType': selectedType
-                                          });
-                                        },
-                                        child: Text('Simpan')),
+                                        child: Text(
+                                          'Batal',
+                                          style: TextStyle(
+                                              color: Colors.grey[700]),
+                                        )),
+                                    ElevatedButton(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor:
+                                            AppColors.brandYellow,
+                                        foregroundColor:
+                                            AppColors.brandDark,
+                                        elevation: 0,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(20),
+                                        ),
+                                      ),
+                                      onPressed: () {
+                                        final q =
+                                            int.tryParse(qtyController.text) ??
+                                                it['qty'];
+                                        final d = int.tryParse(
+                                                discController.text) ??
+                                            (it['discount'] ?? 0);
+                                        Navigator.of(ctx).pop({
+                                          'qty': q,
+                                          'discount': d,
+                                          'discountType': selectedType
+                                        });
+                                      },
+                                      child: Text('Simpan'),
+                                    ),
                                   ],
                                 );
                               });
@@ -490,15 +714,15 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
             ),
 
             // Summary row moved to bottomBar
-            SizedBox(height: 12),
+            SizedBox(height: 1.8.h),
           ],
         ),
       ),
       floatingActionButton: null,
       bottomNavigationBar: SafeArea(
         child: Container(
-          color: Colors.white,
-          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          color: AppColors.brandDark,
+          padding: EdgeInsets.symmetric(horizontal: 3.w, vertical: 1.2.h),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -507,46 +731,80 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text('Total',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[700])),
-                  SizedBox(height: 4),
+                      style: TextStyle(fontSize: 12.sp, color: Colors.grey[300])),
+                  SizedBox(height: 0.6.h),
                   Text(_formatCurrency(_calcTotal()),
                       style: TextStyle(
-                          fontSize: 20,
-                          color: Colors.blue[800],
+                          fontSize: 20.sp,
+                          color: AppColors.brandYellow,
                           fontWeight: FontWeight.bold)),
                 ],
               ),
               ElevatedButton.icon(
-                icon: Icon(Icons.payment),
-                label: Text('Checkout'),
+                icon: Icon(Icons.payment, color: AppColors.brandDark),
+                label: Text('Checkout', style: TextStyle(color: AppColors.brandDark)),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.redAccent,
-                  padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  backgroundColor: AppColors.brandYellow,
+                  foregroundColor: AppColors.brandDark,
+                  padding: EdgeInsets.symmetric(horizontal: 5.w, vertical: 1.4.h),
                 ),
                 onPressed: () async {
                   final confirm = await showDialog<bool>(
                     context: context,
                     builder: (ctx) => AlertDialog(
-                      title: Text('Konfirmasi Checkout'),
-                      content:
-                          Text('Yakin ingin menyimpan transaksi dan checkout?'),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      titlePadding: EdgeInsets.fromLTRB(24, 20, 24, 0),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      actionsPadding:
+                          EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      title: Text(
+                        'Konfirmasi Checkout',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                          color: AppColors.brandDark,
+                        ),
+                      ),
+                      content: Text(
+                        'Yakin ingin menyimpan transaksi dan checkout?',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppColors.brandDark,
+                        ),
+                      ),
                       actions: [
                         TextButton(
                             onPressed: () => Navigator.of(ctx).pop(false),
-                            child: Text('Batal')),
-                        TextButton(
-                            onPressed: () => Navigator.of(ctx).pop(true),
-                            child: Text('Ya')),
+                            child: Text(
+                              'Batal',
+                              style: TextStyle(color: Colors.grey[700]),
+                            )),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.brandYellow,
+                            foregroundColor: AppColors.brandDark,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                          ),
+                          onPressed: () => Navigator.of(ctx).pop(true),
+                          child: Text('Ya, Checkout'),
+                        ),
                       ],
                     ),
                   );
                   if (confirm == true) await _checkout();
                 },
               ),
-              SizedBox(width: 12),
+              SizedBox(width: 3.w),
               TextButton.icon(
-                icon: Icon(Icons.save),
-                label: Text('Draft'),
+                icon: Icon(Icons.save, color: Colors.white),
+                label: Text('Draft', style: TextStyle(color: Colors.white)),
+                style: TextButton.styleFrom(foregroundColor: Colors.white),
                 onPressed: () async {
                   // save as draft (status = 'draft'); update if editing existing
                   final total = _calcTotal();

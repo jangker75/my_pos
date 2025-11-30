@@ -19,7 +19,7 @@ class TransactionDb {
     final databasesPath = await getDatabasesPath();
     final path = join(databasesPath, 'transactions.db');
 
-    return await openDatabase(path, version: 2,
+    return await openDatabase(path, version: 3,
         onCreate: (Database db, int version) async {
       await db.execute('''
         CREATE TABLE transactions (
@@ -30,7 +30,8 @@ class TransactionDb {
           status TEXT,
           created_at TEXT,
           customer TEXT,
-          synced INTEGER DEFAULT 0
+          synced INTEGER DEFAULT 0,
+          payment_method TEXT
         )
       ''');
     }, onUpgrade: (Database db, int oldVersion, int newVersion) async {
@@ -39,6 +40,15 @@ class TransactionDb {
         try {
           await db.execute(
               "ALTER TABLE transactions ADD COLUMN customer TEXT DEFAULT '-'");
+        } catch (e) {
+          // ignore if cannot add (already exists)
+        }
+      }
+      if (oldVersion < 3) {
+        // Add payment_method column
+        try {
+          await db.execute(
+              "ALTER TABLE transactions ADD COLUMN payment_method TEXT");
         } catch (e) {
           // ignore if cannot add (already exists)
         }
@@ -74,6 +84,8 @@ class TransactionDb {
       'status': row['status'],
       'createdAt': row['created_at'],
       'customer': row['customer'] ?? '-',
+      'synced': row['synced'] as int,
+      'paymentMethod': row['payment_method'],
     };
   }
 
@@ -118,9 +130,13 @@ class TransactionDb {
         .rawUpdate('UPDATE transactions SET synced = 1 WHERE id IN ($idsStr)');
   }
 
-  Future<int> updateStatusByTxn(String txnNumber, String status) async {
+  Future<int> updateStatusByTxn(String txnNumber, String status, String? paymentMethod) async {
     final database = await db;
-    return await database.update('transactions', {'status': status},
+    final updateMap = {'status': status, 'synced': 0};
+    if (paymentMethod != null) {
+      updateMap['payment_method'] = paymentMethod;
+    }
+    return await database.update('transactions', updateMap,
         where: 'txn_number = ?', whereArgs: [txnNumber]);
   }
 

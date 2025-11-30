@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:responsive_sizer/responsive_sizer.dart';
 import '../models/product.dart';
 
 class ProductList extends StatelessWidget {
@@ -23,7 +24,7 @@ class ProductList extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(p.name, textAlign: TextAlign.center),
-                Text('Rp ${p.price.toStringAsFixed(0)}')
+                Text('Rp ${p.price.toStringAsFixed(0)}', style: TextStyle(fontSize: 16.sp),)
               ],
             ),
           ),
