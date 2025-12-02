@@ -207,6 +207,27 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
             ],
           ),
           SizedBox(height: 1.6.h),
+          Text('Catatan',
+              style:
+                  TextStyle(fontWeight: FontWeight.bold, fontSize: 16.sp)),
+          SizedBox(height: 0.8.h),
+          Card(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            elevation: 1,
+            margin: EdgeInsets.zero,
+            child: Padding(
+              padding: EdgeInsets.all(3.w),
+              child: Text(
+                (model.notes ?? '').isEmpty
+                    ? '-'
+                    : model.notes!,
+                style: TextStyle(fontSize: 15.sp),
+              ),
+            ),
+          ),
+          SizedBox(height: 1.6.h),
           Card(
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),

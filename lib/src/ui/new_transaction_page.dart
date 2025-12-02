@@ -1,10 +1,14 @@
 import 'dart:convert';
+import 'dart:developer';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import '../theme.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 import '../data/transaction_db.dart';
 import '../models/transaction_model.dart';
 import '../data/product_db.dart';
+import '../bloc/customer/customer_bloc.dart';
+import 'transaction_detail_page.dart';
 
 class NewTransactionPage extends StatefulWidget {
   final TransactionModel? initial;
@@ -16,25 +20,8 @@ class NewTransactionPage extends StatefulWidget {
 
 class _NewTransactionPageState extends State<NewTransactionPage> {
   final _customerController = TextEditingController();
-  final List<String> _customerSuggestions = [
-    'umum',
-    'novi',
-    'mouchi',
-    'intan',
-    'aji',
-    'hana',
-    'vivi',
-    'ayu',
-    'taufik',
-    'opik',
-    'alshad',
-    'zea',
-    'nur',
-    'adel',
-    'bunda',
-    'mami/papi baim',
-    'jafier',
-  ];
+  final _notesController = TextEditingController();
+  final List<String> _customerSuggestions = [];
   final FocusNode _customerFocusNode = FocusNode();
   final GlobalKey _customerFieldKey = GlobalKey();
   final _db = TransactionDb();
@@ -46,12 +33,15 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
   void initState() {
     super.initState();
     _loadProducts();
-    _customerController.text = 'umum';
+    log("widget.initial: ${widget.initial}");
+    // pastikan CustomerBloc memuat data pelanggan untuk dropdown/autocomplete
+    context.read<CustomerBloc>().add(LoadCustomers());
     _customerFocusNode.addListener(_onCustomerFocus);
     // if initial transaction provided, populate fields
     if (widget.initial != null) {
       final m = widget.initial!;
       _customerController.text = m.customer;
+      _notesController.text = m.notes ?? '';
       final items = m.getItemsList();
       setState(() {
         _cart = items
@@ -83,6 +73,7 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
     _customerController.removeListener(_onCustomerChanged);
     _customerFocusNode.removeListener(_onCustomerFocus);
     _customerController.dispose();
+    _notesController.dispose();
     _customerFocusNode.dispose();
     super.dispose();
   }
@@ -191,14 +182,31 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
           status: 'on progress',
           createdAt: widget.initial!.createdAt,
           customer: _customerController.text.trim(),
+          notes: _notesController.text.trim().isEmpty
+              ? null
+              : _notesController.text.trim(),
         );
+        log("data updated: ${updated.toJson()}");
         await _db.updateTransaction(updated);
       } else {
         final model = TransactionModel.createNew(
             itemsList: _cart,
             total: total.toDouble(),
             customer: _customerController.text.trim());
-        await _db.insertTransaction(model);
+        final withNotes = TransactionModel(
+          id: model.id,
+          txnNumber: model.txnNumber,
+          items: model.items,
+          total: model.total,
+          status: model.status,
+          createdAt: model.createdAt,
+          customer: model.customer,
+          notes: _notesController.text.trim().isEmpty
+              ? null
+              : _notesController.text.trim(),
+          synced: model.synced,
+        );
+        await _db.insertTransaction(withNotes);
       }
       // return success to caller
       if (!mounted) return;
@@ -213,16 +221,59 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
 
   @override
   Widget build(BuildContext context) {
+    // sync customer suggestions from CustomerBloc state
+    final customerState = context.watch<CustomerBloc>().state;
+    if (customerState is CustomerLoaded) {
+      final names = customerState.Customers
+          .map((c) => c.name.trim())
+          .where((n) => n.isNotEmpty)
+          .toSet()
+          .toList();
+      // update suggestions list once per build
+      _customerSuggestions
+        ..clear()
+        ..add('Umum')
+        ..addAll(names.where((n) => n.toLowerCase() != 'umum'));
+      if (_customerController.text.isEmpty) {
+        _customerController.text = 'Umum';
+      }
+    }
+
     // total calculated on demand via _calcTotal()
+    final isEditing = widget.initial != null;
+    final txnNumber = widget.initial?.txnNumber ?? '';
+    final isOnProgress = isEditing && widget.initial!.status == 'on progress';
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('New Transaction', style: TextStyle(color: AppColors.brandYellow)),
+        title: Text(
+          isEditing ? 'EDIT $txnNumber' : 'New Transaction',
+          style: TextStyle(color: AppColors.brandYellow),
+        ),
         backgroundColor: AppColors.brandDark,
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: AppColors.brandYellow),
           onPressed: () => Navigator.pop(context),
         ),
+        actions: [
+          if (isOnProgress)
+          IconButton(
+            icon: Icon(Icons.create_rounded, color: AppColors.brandYellow),
+            onPressed: () async {
+              final changed = await Navigator.of(context).push<bool>(
+                MaterialPageRoute(
+                  builder: (_) => TransactionDetailPage(
+                    model: widget.initial!,
+                  ),
+                ),
+              );
+
+              if (changed == true && mounted) {
+                Navigator.of(context).pop(true);
+              }
+            },
+          ),
+        ],
       ),
       body: Padding(
         padding: EdgeInsets.all(3.w),
@@ -292,6 +343,22 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
                   ),
                 );
               },
+            ),
+            SizedBox(height: 1.8.h),
+
+            // Notes field
+            Text('Catatan (opsional)',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            SizedBox(height: 1.2.h),
+            TextField(
+              controller: _notesController,
+              maxLines: 2,
+              decoration: InputDecoration(
+                hintText: 'Tambahkan catatan untuk transaksi ini',
+                border: OutlineInputBorder(),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 3.w, vertical: 1.2.h),
+              ),
             ),
             SizedBox(height: 1.8.h),
 
@@ -818,6 +885,9 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
                         status: 'draft',
                         createdAt: widget.initial!.createdAt,
                         customer: _customerController.text.trim(),
+                        notes: _notesController.text.trim().isEmpty
+                            ? null
+                            : _notesController.text.trim(),
                       );
                       await _db.updateTransaction(updated);
                     } else {
@@ -827,13 +897,18 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
                           customer: _customerController.text.trim());
                       // override status to draft
                       final draft = TransactionModel(
-                          id: model.id,
-                          txnNumber: model.txnNumber,
-                          items: model.items,
-                          total: model.total,
-                          status: 'draft',
-                          createdAt: model.createdAt,
-                          customer: model.customer);
+                        id: model.id,
+                        txnNumber: model.txnNumber,
+                        items: model.items,
+                        total: model.total,
+                        status: 'draft',
+                        createdAt: model.createdAt,
+                        customer: model.customer,
+                        notes: _notesController.text.trim().isEmpty
+                            ? null
+                            : _notesController.text.trim(),
+                        synced: model.synced,
+                      );
                       await _db.insertTransaction(draft);
                     }
                     if (!mounted) return;

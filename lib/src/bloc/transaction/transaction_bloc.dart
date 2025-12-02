@@ -1,6 +1,6 @@
 import 'package:bloc/bloc.dart';
-import '../repository/transaction_repository.dart';
-import '../models/transaction_model.dart';
+import '../../repository/transaction_repository.dart';
+import '../../models/transaction_model.dart';
 
 part 'transaction_event.dart';
 part 'transaction_state.dart';

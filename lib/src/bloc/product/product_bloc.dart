@@ -1,6 +1,6 @@
 import 'package:bloc/bloc.dart';
-import '../repository/product_repository.dart';
-import '../models/product.dart';
+import '../../repository/product_repository.dart';
+import '../../models/product.dart';
 
 part 'product_event.dart';
 part 'product_state.dart';

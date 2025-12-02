@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../models/transaction_model.dart';
@@ -19,7 +21,7 @@ class TransactionDb {
     final databasesPath = await getDatabasesPath();
     final path = join(databasesPath, 'transactions.db');
 
-    return await openDatabase(path, version: 3,
+    return await openDatabase(path, version: 4,
         onCreate: (Database db, int version) async {
       await db.execute('''
         CREATE TABLE transactions (
@@ -31,7 +33,8 @@ class TransactionDb {
           created_at TEXT,
           customer TEXT,
           synced INTEGER DEFAULT 0,
-          payment_method TEXT
+          payment_method TEXT,
+          notes TEXT
         )
       ''');
     }, onUpgrade: (Database db, int oldVersion, int newVersion) async {
@@ -53,6 +56,14 @@ class TransactionDb {
           // ignore if cannot add (already exists)
         }
       }
+      if (oldVersion < 4) {
+        // Add notes column
+        try {
+          await db.execute("ALTER TABLE transactions ADD COLUMN notes TEXT");
+        } catch (e) {
+          // ignore if cannot add (already exists)
+        }
+      }
     });
   }
 
@@ -68,7 +79,12 @@ class TransactionDb {
       map['created_at'] = modelJson['createdAt'];
     if (modelJson.containsKey('customer'))
       map['customer'] = modelJson['customer'];
-    // synced handled by DB
+    if (modelJson.containsKey('synced'))
+      map['synced'] = modelJson['synced']; // ← TAMBAHKAN INI
+    if (modelJson.containsKey('paymentMethod'))
+      map['payment_method'] =
+          modelJson['paymentMethod']; // ← OPTIONAL, biar konsisten
+    if (modelJson.containsKey('notes')) map['notes'] = modelJson['notes'];
     return map;
   }
 
@@ -86,15 +102,17 @@ class TransactionDb {
       'customer': row['customer'] ?? '-',
       'synced': row['synced'] as int,
       'paymentMethod': row['payment_method'],
+      'notes': row['notes'],
     };
   }
 
   Future<int> insertTransaction(TransactionModel t) async {
     final database = await db;
     final modelJson = t.toJson();
+    modelJson['synced'] = 0;
     // convert to DB keys
     final dbMap = _toDbMap(modelJson);
-    dbMap['synced'] = 0;
+    print('[TransactionDb] insertTransaction txn=${t.txnNumber} -> synced=0');
     return await database.insert('transactions', dbMap);
   }
 
@@ -119,6 +137,7 @@ class TransactionDb {
       final converted = _fromDbRow(r);
       list.add(TransactionModel.fromJson(converted));
     }
+    print('[TransactionDb] getUnsyncedTransactions count=${list.length}');
     return list;
   }
 
@@ -126,28 +145,37 @@ class TransactionDb {
     if (ids.isEmpty) return 0;
     final database = await db;
     final idsStr = ids.map((e) => e.toString()).join(',');
+    print('[TransactionDb] markAsSynced ids=$idsStr');
     return await database
         .rawUpdate('UPDATE transactions SET synced = 1 WHERE id IN ($idsStr)');
   }
 
-  Future<int> updateStatusByTxn(String txnNumber, String status, String? paymentMethod) async {
+  Future<int> updateStatusByTxn(
+      String txnNumber, String status, String? paymentMethod) async {
     final database = await db;
     final updateMap = {'status': status, 'synced': 0};
     if (paymentMethod != null) {
       updateMap['payment_method'] = paymentMethod;
     }
-    return await database.update('transactions', updateMap,
+    print(
+        '[TransactionDb] updateStatusByTxn txn=$txnNumber status=$status set synced=0 paymentMethod=$paymentMethod');
+    final count = await database.update('transactions', updateMap,
         where: 'txn_number = ?', whereArgs: [txnNumber]);
+    return count;
   }
 
   Future<int> updateTransaction(TransactionModel t) async {
     final database = await db;
     final map = t.toJson();
+    map['synced'] = 0;
     // convert keys
     final dbMap = _toDbMap(map);
+    log('[TransactionDb] updateTransaction txn=${t.txnNumber} status=${t.status} set synced=0');
     // do not change created_at
-    return await database.update('transactions', dbMap,
+    final count = await database.update('transactions', dbMap,
         where: 'txn_number = ?', whereArgs: [t.txnNumber]);
+    log('[TransactionDb] updateTransaction affected=$count for txn=${t.txnNumber}');
+    return count;
   }
 
   Future<int> deleteTransactionByTxn(String txnNumber) async {
@@ -195,6 +223,7 @@ class TransactionDb {
         'customer': t.customer,
         'total': t.total,
         'items': items,
+        'notes': t.notes,
       };
     }).toList();
 

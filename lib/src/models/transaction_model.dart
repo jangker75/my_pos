@@ -10,6 +10,7 @@ class TransactionModel {
   final String customer;
   final String? paymentMethod;
   final int? synced;
+  final String? notes;
 
   TransactionModel({
     this.id,
@@ -20,6 +21,7 @@ class TransactionModel {
     required this.createdAt,
     this.paymentMethod,
     this.synced,
+    this.notes,
     this.customer = '-',
   });
 
@@ -86,6 +88,7 @@ class TransactionModel {
       synced: json['synced'] is int
           ? json['synced'] as int
           : (json['synced'] == null ? null : int.tryParse(json['synced'].toString())),
+      notes: json['notes'] ?? json['note'],
     );
   }
 
@@ -99,5 +102,6 @@ class TransactionModel {
         'customer': customer,
         'paymentMethod': paymentMethod,
         if (synced != null) 'synced': synced,
+        if (notes != null) 'notes': notes,
       };
 }

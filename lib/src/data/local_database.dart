@@ -21,6 +21,7 @@ class LocalDatabase {
 
     return await openDatabase(path, version: 1,
         onCreate: (Database db, int version) async {
+      // Create products table
       await db.execute('''
         CREATE TABLE products (
           id INTEGER PRIMARY KEY,
@@ -39,35 +40,23 @@ class LocalDatabase {
         'price': 15000.0,
         'stock': 50
       });
-      await db.insert('products', {
-        'id': 2,
-        'code': 'LAT',
-        'name': 'Latte',
-        'price': 25000.0,
-        'stock': 40
-      });
-      await db.insert('products', {
-        'id': 3,
-        'code': 'CAP',
-        'name': 'Cappuccino',
-        'price': 23000.0,
-        'stock': 30
-      });
-      await db.insert('products', {
-        'id': 4,
-        'code': 'SND',
-        'name': 'Sandwich',
-        'price': 30000.0,
-        'stock': 20
-      });
-      await db.insert('products', {
-        'id': 5,
-        'code': 'CKE',
-        'name': 'Cake Slice',
-        'price': 20000.0,
-        'stock': 15
-      });
+      
+      // Create customers table
+      await db.execute('''
+        CREATE TABLE "customers" (
+          id INTEGER PRIMARY KEY,
+          name TEXT,
+          description TEXT
+        )
+      ''');
 
+      // Seed initial customers for trial/testing
+      await db.insert('customers', {
+        'id': 1,
+        'name': 'John Doe',
+        'description': 'Just a regular customer',
+      });
+      
       // columns names match TransactionModel.toJson keys
       await db.execute('''
         CREATE TABLE transactions (

@@ -3,6 +3,7 @@ import 'dart:developer';
 
 import 'package:flutter/material.dart';
 import 'package:my_pos/src/constant/const.dart';
+import 'package:my_pos/src/ui/customer_list_page.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 import '../theme.dart';
 import 'new_transaction_page.dart';
@@ -72,11 +73,15 @@ class _TransactionListPageState extends State<TransactionListPage> {
 
   Future<void> _load() async {
     final list = await _db.getAllTransactions();
+    for (final t in list) {
+      log('[TransactionListPage] load txn=${t.txnNumber} status=${t.status} synced=${t.synced}');
+    }
     setState(() {
       _items = list;
       _loading = false;
     });
-
+    log('Loaded ${list.length} transactions');
+    log('data : ${list.map((e) => e.toJson())}');
     // Auto-expand groups that have at least one transaction on progress or draft
     final inProgressKeys = <String>{};
     for (var m in list) {
@@ -98,20 +103,23 @@ class _TransactionListPageState extends State<TransactionListPage> {
       final clientId = await _getDeviceId();
       final payload = await _db.buildSyncPayload(clientId);
       final allTx = (payload['transactions'] as List<dynamic>?) ?? [];
-      final paid = allTx
+      // dari semua transaksi UNSYNCED, hanya kirim yang status-nya paid/on progress/canceled
+      final toSync = allTx
           .where((t) =>
               (t['status'] ?? '') == 'paid' ||
               (t['status'] ?? '') == 'on progress' ||
               (t['status'] ?? '') == 'canceled')
           .toList();
-      if (paid.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Nothing to sync (no paid transactions)')));
+      log('sending ${toSync.length} of ${allTx.length} unsynced transactions for sync');
+      if (toSync.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                'Nothing to sync (no paid/on progress/canceled transactions)')));
         return;
       }
       log('Sending sync payload: ${{
         'clientId': clientId,
-        'transactions': paid,
+        'transactions': toSync,
       }}');
       final uri = Uri.parse('${baseUrlBackend}sync-transaction');
       // final uri = Uri.parse('http://localhost:8001/sync-transaction');
@@ -119,7 +127,7 @@ class _TransactionListPageState extends State<TransactionListPage> {
       final resp = await http.post(uri,
           body: jsonEncode({
             'clientId': clientId,
-            'transactions': paid,
+            'transactions': toSync,
           }),
           headers: {
             'Content-Type': 'application/json',
@@ -131,8 +139,8 @@ class _TransactionListPageState extends State<TransactionListPage> {
       // fake sending only paid transactions
       // await Future.delayed(Duration(seconds: 2));
 
-      // mark only the paid transactions as synced
-      final ids = paid.map((e) => e['localId']).whereType<int>().toList();
+      // tandai hanya transaksi yang dikirim sebagai synced
+      final ids = toSync.map((e) => e['localId']).whereType<int>().toList();
       if (ids.isNotEmpty) await _db.markAsSynced(ids);
       await _load();
       ScaffoldMessenger.of(context).showSnackBar(
@@ -382,8 +390,8 @@ class _TransactionListPageState extends State<TransactionListPage> {
           model = null;
         }
         if (model != null) {
-          // if draft, open editor; otherwise show detail
-          if (model.status == 'draft') {
+          // if draft or on progress, open editor; otherwise show detail
+          if (model.status == 'draft' || model.status == 'on progress') {
             Navigator.of(context)
                 .push(MaterialPageRoute(
                     builder: (_) => NewTransactionPage(initial: model)))
@@ -518,6 +526,15 @@ class _TransactionListPageState extends State<TransactionListPage> {
                   Navigator.of(context).pop();
                   Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => ProductListPage()));
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.person),
+                title: Text('Customers'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => CustomerListPage()));
                 },
               ),
             ],
