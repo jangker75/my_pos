@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:my_pos/src/models/customer.dart';
 import 'package:sqflite/sqflite.dart';
 import '../data/customer_db.dart';
@@ -17,12 +18,23 @@ class CustomerRepository {
   }
 
   Future<void> replaceAll(List<Customer> customers) async {
+    debugPrint('CustomerRepository.replaceAll: start with ${customers.length} customers');
     final database = await _db.db;
-    await database.transaction((txn) async {
-      await txn.delete('customers');
-      for (var c in customers) {
-        await txn.insert('customers', c.toJson());
+    debugPrint('CustomerRepository.replaceAll: got db');
+    
+    // Delete all existing customers first
+    await database.delete('customers');
+    debugPrint('CustomerRepository.replaceAll: deleted old customers');
+    
+    // Insert new customers one by one
+    for (int i = 0; i < customers.length; i++) {
+      final c = customers[i];
+      await database.insert('customers', c.toJson(), conflictAlgorithm: ConflictAlgorithm.replace);
+      if (i % 10 == 0) {
+        debugPrint('CustomerRepository.replaceAll: inserted ${i + 1}/${customers.length}');
       }
-    });
+    }
+    
+    debugPrint('CustomerRepository.replaceAll: done');
   }
 }

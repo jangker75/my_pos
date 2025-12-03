@@ -137,6 +137,9 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
         'name': p.name,
         'price': p.price.toInt(),
       }).toList();
+      // Sort by product name alphabetically
+      _products.sort((a, b) => 
+        (a['name'] as String).toLowerCase().compareTo((b['name'] as String).toLowerCase()));
     });
   }
 

@@ -171,6 +171,10 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
                   color: AppColors.brandDark,
                   fontWeight: FontWeight.bold)),
           SizedBox(height: 0.6.h),
+          Text('${model.customer}',
+              style: TextStyle(fontSize: 18.sp, color: AppColors.brandDark, 
+              fontWeight: FontWeight.bold)),
+          SizedBox(height: 0.6.h),
           Row(
             children: [
               Expanded(child: Text(_fmt(_parse(model.createdAt)))),

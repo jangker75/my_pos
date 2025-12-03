@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 class TransactionModel {
   final int? id;
@@ -57,14 +58,15 @@ class TransactionModel {
 
   static String _twoDigits(int v) => v.toString().padLeft(2, '0');
 
-  /// Format: KP + YY + MM + DD + HH + mm  (example: KP2505221455)
+  /// Format: KP + YY + MM + DD + HH + mm + RR (random 2 digit)
+  /// Example: KP250522145537
   static String _generateTxnNumber(DateTime dt) {
     final yy = dt.year % 100;
     final mm = _twoDigits(dt.month);
     final dd = _twoDigits(dt.day);
     final hh = _twoDigits(dt.hour);
-    final min = _twoDigits(dt.minute);
-    return 'KP${_twoDigits(yy)}$mm$dd$hh$min';
+    final random = _twoDigits(Random().nextInt(100)); // 00-99
+    return 'KP${_twoDigits(yy)}$mm$dd$hh$random';
   }
 
   factory TransactionModel.fromJson(Map<String, dynamic> json) {

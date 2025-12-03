@@ -1,7 +1,7 @@
 name: my_pos
 description: POS Kopilibrasi Application
 publish_to: 'none'
-version: 0.3.0+3
+version: 0.3.0+4
 
 environment:
   sdk: '>=2.17.0 <3.0.0'
