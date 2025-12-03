@@ -6,7 +6,7 @@ import '../theme.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 import '../data/transaction_db.dart';
 import '../models/transaction_model.dart';
-import '../data/product_db.dart';
+import '../repository/product_repository.dart';
 import '../bloc/customer/customer_bloc.dart';
 import 'transaction_detail_page.dart';
 
@@ -25,7 +25,7 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
   final FocusNode _customerFocusNode = FocusNode();
   final GlobalKey _customerFieldKey = GlobalKey();
   final _db = TransactionDb();
-  final _productDb = ProductDb();
+  final _productRepo = ProductRepository();
   List<Map<String, dynamic>> _products = [];
   List<Map<String, dynamic>> _cart = [];
 
@@ -67,7 +67,7 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
     setState(() {});
   }
 
-
+ 
   @override
   void dispose() {
     _customerController.removeListener(_onCustomerChanged);
@@ -129,9 +129,14 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
   }
 
   Future<void> _loadProducts() async {
-    final p = await _productDb.getAllProducts();
+    final products = await _productRepo.getAll();
     setState(() {
-      _products = p;
+      // Convert Product model to Map for compatibility with existing cart logic
+      _products = products.map((p) => {
+        'id': p.id,
+        'name': p.name,
+        'price': p.price.toInt(),
+      }).toList();
     });
   }
 

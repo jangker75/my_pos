@@ -12,6 +12,8 @@ class ProductListPage extends StatefulWidget {
 }
 
 class _ProductListPageState extends State<ProductListPage> {
+  bool _isSyncing = false;
+
   @override
   void initState() {
     super.initState();
@@ -20,34 +22,53 @@ class _ProductListPageState extends State<ProductListPage> {
   }
 
   Future<void> _sync() async {
-    final uri = Uri.parse('${baseUrlBackend}menu_details');
-    final resp = await http.get(uri).timeout(Duration(seconds: 15));
-    if (resp.statusCode != 200) {
-      throw Exception('HTTP ${resp.statusCode}');
+    if (_isSyncing) return; // prevent double tap
+
+    setState(() => _isSyncing = true);
+
+    try {
+      final uri = Uri.parse('${baseUrlBackend}menu_details');
+      final resp = await http.get(uri).timeout(Duration(seconds: 15));
+      if (resp.statusCode != 200) {
+        throw Exception('HTTP ${resp.statusCode}');
+      }
+      final List<dynamic> data =
+          resp.body.isEmpty ? [] : (jsonDecode(resp.body) as List<dynamic>);
+
+      // extract name and price only, then map to Product model
+      final products = data.asMap().entries.map<Product>((entry) {
+        final index = entry.key;
+        final e = entry.value;
+        final name = e['name'] ?? e['Name'] ?? '';
+        final price = e['price'] is num
+            ? (e['price'] as num).toDouble()
+            : double.tryParse((e['price'] ?? '').toString()) ?? 0.0;
+        // gunakan index+1 sebagai id karena API tidak menyediakan id
+        return Product(
+          id: index + 1,
+          code: '',
+          name: name.toString(),
+          price: price,
+          stock: 0,
+        );
+      }).toList();
+
+      // minta BLoC mengganti isi produk lokal
+      if (mounted) {
+        context.read<ProductBloc>().add(ReplaceProducts(products));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Products synced (${products.length})')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Sync failed: ${e.toString()}')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSyncing = false);
+      }
     }
-    final List<dynamic> data =
-        resp.body.isEmpty ? [] : (jsonDecode(resp.body) as List<dynamic>);
-
-    // extract name and price only, then map to Product model
-    final products = data.map<Product>((e) {
-      final name = e['name'] ?? e['Name'] ?? '';
-      final price = e['price'] is num
-          ? (e['price'] as num).toDouble()
-          : double.tryParse((e['price'] ?? '').toString()) ?? 0.0;
-      // id & stock tidak tersedia dari API ini, isi default
-      return Product(
-        id: 0,
-        code: '',
-        name: name.toString(),
-        price: price,
-        stock: 0,
-      );
-    }).toList();
-
-    // minta BLoC mengganti isi produk lokal
-    context.read<ProductBloc>().add(ReplaceProducts(products));
-    ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Products synced (${products.length})')));
   }
 
   @override
@@ -56,7 +77,19 @@ class _ProductListPageState extends State<ProductListPage> {
       appBar: AppBar(
         title: Text('Products'),
         actions: [
-          IconButton(icon: Icon(Icons.sync), onPressed: _sync),
+          _isSyncing
+              ? Padding(
+                  padding: EdgeInsets.all(16),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  ),
+                )
+              : IconButton(icon: Icon(Icons.sync), onPressed: _sync),
         ],
       ),
       body: BlocBuilder<ProductBloc, ProductState>(

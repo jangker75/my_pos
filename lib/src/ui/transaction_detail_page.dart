@@ -3,6 +3,7 @@ import 'package:responsive_sizer/responsive_sizer.dart';
 import '../models/transaction_model.dart';
 import '../data/transaction_db.dart';
 import '../theme.dart';
+import '../services/receipt_printer_service.dart';
 
 class TransactionDetailPage extends StatefulWidget {
   final TransactionModel model;
@@ -14,6 +15,7 @@ class TransactionDetailPage extends StatefulWidget {
 
 class _TransactionDetailPageState extends State<TransactionDetailPage> {
   final _db = TransactionDb();
+  final _printer = ReceiptPrinterService();
 
   String _formatCurrency(double value) {
     final s = value.toInt().toString();
@@ -292,6 +294,26 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
                     ],
                   ),
                 ],
+              ),
+            ),
+          ),
+          SizedBox(height: 2.h),
+
+          // Print Receipt Button
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () => _printer.showPrintDialog(context, model),
+              icon: Icon(Icons.print, color: Colors.white),
+              label: Text('Print Struk',
+                  style: TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.brandDark,
+                padding: EdgeInsets.symmetric(vertical: 1.5.h),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
           ),
