@@ -27,12 +27,14 @@ class TransactionModel {
   });
 
   /// Helper to create a new transaction with generated txnNumber and status on progress
+  /// [generateUniqueOnly] - jika true, akan validate apakah txnNumber sudah ada di database
   factory TransactionModel.createNew(
       {required List<Map<String, dynamic>> itemsList,
       required double total,
-      String customer = '-'}) {
+      String customer = '-',
+      String? txnNumber}) {
     final now = DateTime.now();
-    final txn = _generateTxnNumber(now);
+    final txn = txnNumber ?? _generateTxnNumber(now);
     return TransactionModel(
       txnNumber: txn,
       items: jsonEncode(itemsList),
@@ -41,6 +43,52 @@ class TransactionModel {
       createdAt: now.toIso8601String(),
       customer: customer,
       synced: 0,
+    );
+  }
+
+  /// Async method to create a transaction dengan validasi txnNumber unique di database
+  /// Jika txnNumber yang di-generate sudah ada di database, akan generate ulang
+  static Future<TransactionModel> createNewWithValidation({
+    required List<Map<String, dynamic>> itemsList,
+    required double total,
+    required dynamic dbProvider, // TransactionDb instance
+    String customer = '-',
+  }) async {
+    String uniqueTxnNumber = '';
+    int attempts = 0;
+    const maxAttempts = 10;
+
+    // Keep generating until we find a unique txnNumber
+    while (attempts < maxAttempts) {
+      final generatedTxn = _generateTxnNumber(DateTime.now());
+      try {
+        // Check if txnNumber already exists in database
+        final existing = await dbProvider.getTransactionByTxnNumber(generatedTxn);
+        if (existing == null) {
+          // txnNumber is unique, use it
+          uniqueTxnNumber = generatedTxn;
+          break;
+        }
+      } catch (e) {
+        // If error checking database, use the generated number anyway
+        uniqueTxnNumber = generatedTxn;
+        break;
+      }
+      attempts++;
+      
+      // Add small delay before retry to ensure different random number
+      await Future.delayed(const Duration(milliseconds: 10));
+    }
+
+    if (uniqueTxnNumber.isEmpty) {
+      throw Exception('Failed to generate unique transaction number after $maxAttempts attempts');
+    }
+
+    return TransactionModel.createNew(
+      itemsList: itemsList,
+      total: total,
+      customer: customer,
+      txnNumber: uniqueTxnNumber,
     );
   }
 
@@ -58,15 +106,17 @@ class TransactionModel {
 
   static String _twoDigits(int v) => v.toString().padLeft(2, '0');
 
-  /// Format: KP + YY + MM + DD + HH + mm + RR (random 2 digit)
-  /// Example: KP250522145537
+  /// Format: KP + YY + MM + DD + HH + mm + ss + RR (random 2 digit)
+  /// Example: KP25052214553712
   static String _generateTxnNumber(DateTime dt) {
     final yy = dt.year % 100;
     final mm = _twoDigits(dt.month);
     final dd = _twoDigits(dt.day);
     final hh = _twoDigits(dt.hour);
-    final random = _twoDigits(Random().nextInt(100)); // 00-99
-    return 'KP${_twoDigits(yy)}$mm$dd$hh$random';
+    final min = _twoDigits(dt.minute);
+    final ss = _twoDigits(dt.second);
+    final random = Random().nextInt(100).toString().padLeft(2, '0'); // 00-99
+    return 'KP${_twoDigits(yy)}$mm$dd$hh$min$ss$random';
   }
 
   factory TransactionModel.fromJson(Map<String, dynamic> json) {

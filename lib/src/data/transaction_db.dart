@@ -116,6 +116,15 @@ class TransactionDb {
     return await database.insert('transactions', dbMap);
   }
 
+  Future<TransactionModel?> getTransactionByTxnNumber(String txnNumber) async {
+    final database = await db;
+    final rows = await database.query('transactions',
+        where: 'txn_number = ?', whereArgs: [txnNumber]);
+    if (rows.isEmpty) return null;
+    final converted = _fromDbRow(rows.first);
+    return TransactionModel.fromJson(converted);
+  }
+
   Future<List<TransactionModel>> getAllTransactions() async {
     final database = await db;
     final rows =
@@ -224,6 +233,7 @@ class TransactionDb {
         'total': t.total,
         'items': items,
         'notes': t.notes,
+        'paymentMethod': t.paymentMethod,
       };
     }).toList();
 

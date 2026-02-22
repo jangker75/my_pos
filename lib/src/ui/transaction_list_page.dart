@@ -55,6 +55,10 @@ class _TransactionListPageState extends State<TransactionListPage> {
   // expansion state per date key (YYYY-MM-DD)
   final Set<String> _expandedGroups = {};
 
+  // Secret sync all feature
+  DateTime? _syncButtonPressStart;
+  bool _isLongPressing = false;
+
   bool get _hasFilters => _filterStatus != 'all' || _filterDate != null;
 
   void _clearFilters() {
@@ -148,6 +152,163 @@ class _TransactionListPageState extends State<TransactionListPage> {
     } catch (e) {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Sync failed: $e')));
+    }
+  }
+
+  /// Secret sync - kirim SEMUA transaksi tanpa filter
+  Future<void> _syncAll() async {
+    try {
+      final clientId = await _getDeviceId();
+      // Ambil SEMUA transaksi dari local DB
+      final allTransactions = await _db.getAllTransactions();
+      
+      if (allTransactions.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Tidak ada transaksi untuk dikirim')));
+        return;
+      }
+
+      // Convert semua transaksi ke format sync (sama seperti buildSyncPayload)
+      final toSync = allTransactions.map((t) {
+        // Parse items dari JSON string ke array seperti di buildSyncPayload
+        final items = t.getItemsList().map((it) {
+          final price = it['price'] is int
+              ? it['price'] as int
+              : int.tryParse(it['price']?.toString() ?? '0') ?? 0;
+          final qty = it['qty'] is int
+              ? it['qty'] as int
+              : int.tryParse(it['qty']?.toString() ?? '1') ?? 1;
+          final discount = it['discount'] is int
+              ? it['discount'] as int
+              : int.tryParse(it['discount']?.toString() ?? '0') ?? 0;
+          final discountType = (it['discountType'] as String?) ?? 'nominal';
+          final lineTotal = discountType == 'percentage'
+              ? (price * qty - ((price * qty * discount) ~/ 100))
+              : (price * qty - discount);
+          return {
+            'name': it['name'] ?? '',
+            'sku': it['sku'] ?? '',
+            'price': price,
+            'qty': qty,
+            'discount': discount,
+            'discountType': discountType,
+            'lineTotal': lineTotal,
+          };
+        }).toList();
+
+        return {
+          'localId': t.id,
+          'txnNumber': t.txnNumber,
+          'status': t.status,
+          'createdAt': t.createdAt,
+          'customer': t.customer,
+          'total': t.total,
+          'items': items,
+          'paymentMethod': t.paymentMethod,
+          'notes': t.notes,
+        };
+      }).toList();
+
+      log('[SECRET SYNC] Sending ALL ${toSync.length} transactions');
+
+      final uri = Uri.parse('${baseUrlBackend}sync-transaction');
+      final resp = await http.post(uri,
+          body: jsonEncode({
+            'clientId': clientId,
+            'transactions': toSync,
+          }),
+          headers: {
+            'Content-Type': 'application/json',
+          }).timeout(Duration(seconds: 30));
+
+      log('[SECRET SYNC] Response: ${resp.statusCode} ${resp.body}');
+
+      if (resp.statusCode != 200) {
+        throw Exception('HTTP ${resp.statusCode}');
+      }
+
+      // Mark ALL transactions as synced
+      final ids = allTransactions.map((t) => t.id).whereType<int>().toList();
+      if (ids.isNotEmpty) await _db.markAsSynced(ids);
+      
+      await _load();
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('🔓 Secret Sync: ${ids.length} transaksi berhasil dikirim!')));
+    } catch (e) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Secret Sync gagal: $e')));
+    }
+  }
+
+  void _onSyncButtonDown() {
+    _syncButtonPressStart = DateTime.now();
+    _isLongPressing = true;
+    
+    // Check setelah 5 detik
+    Future.delayed(Duration(seconds: 5), () {
+      if (_isLongPressing && _syncButtonPressStart != null) {
+        final elapsed = DateTime.now().difference(_syncButtonPressStart!);
+        if (elapsed.inSeconds >= 5) {
+          // Trigger secret sync dialog
+          _showSecretSyncDialog();
+        }
+      }
+    });
+  }
+
+  void _onSyncButtonUp() {
+    if (_syncButtonPressStart != null) {
+      final elapsed = DateTime.now().difference(_syncButtonPressStart!);
+      if (elapsed.inSeconds < 5) {
+        // Normal sync
+        _sync();
+      }
+    }
+    _isLongPressing = false;
+    _syncButtonPressStart = null;
+  }
+
+  void _onSyncButtonCancel() {
+    _isLongPressing = false;
+    _syncButtonPressStart = null;
+  }
+
+  Future<void> _showSecretSyncDialog() async {
+    _isLongPressing = false;
+    _syncButtonPressStart = null;
+    
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.orange),
+            SizedBox(width: 8),
+            Text('Secret Sync'),
+          ],
+        ),
+        content: Text(
+          '⚠️ PERHATIAN!\n\n'
+          'Anda akan mengirim SEMUA data transaksi ke server tanpa filter status apapun.\n\n'
+          'Semua transaksi akan ditandai sebagai "synced".\n\n'
+          'Lanjutkan?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Batal'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Ya, Kirim Semua', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _syncAll();
     }
   }
 
@@ -334,7 +495,7 @@ class _TransactionListPageState extends State<TransactionListPage> {
                                   : Colors.orange;
                       return Container(
                         padding: EdgeInsets.symmetric(
-                            horizontal: 2.w, vertical: 1.h),
+                            horizontal: 0.5.w, vertical: 1.h),
                         decoration: BoxDecoration(
                             color: color,
                             borderRadius: BorderRadius.circular(12)),
@@ -357,7 +518,7 @@ class _TransactionListPageState extends State<TransactionListPage> {
                     Text(t.time),
                     SizedBox(height: 0.8.h),
                     SizedBox(
-                      width: 55.w,
+                      width: 45.w,
                       child: Text(t.itemsSummary,
                           overflow: TextOverflow.ellipsis,
                           textAlign: TextAlign.center),
@@ -367,19 +528,23 @@ class _TransactionListPageState extends State<TransactionListPage> {
           (Device.orientation == Orientation.portrait)
               ? SizedBox.shrink()
               : SizedBox(width: 3.w),
-              Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(t.id),
-                    SizedBox(height: 0.8.h),
-                    Text(
-                        t.isPaid
-                            ? 'Paid'
-                            : '- Rp ${_formatCurrency((t.total - t.paid).toInt())}',
-                        style: TextStyle(
-                            color: t.isPaid ? Colors.green : Colors.red)),
-                  ],
-                ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(t.id,
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1),
+                SizedBox(height: 0.8.h),
+                Text(
+                    t.isPaid
+                        ? 'Paid'
+                        : '- Rp ${_formatCurrency((t.total - t.paid).toInt())}',
+                    style: TextStyle(
+                        color: t.isPaid ? Colors.green : Colors.red)),
+              ],
+            ),
+          ),
         ],
       ),
       onTap: () async {
@@ -391,21 +556,21 @@ class _TransactionListPageState extends State<TransactionListPage> {
         }
         if (model != null) {
           // if draft or on progress, open editor; otherwise show detail
-          if (model.status == 'draft' || model.status == 'on progress') {
-            Navigator.of(context)
-                .push(MaterialPageRoute(
-                    builder: (_) => NewTransactionPage(initial: model)))
-                .then((saved) {
-              if (saved == true) _load();
-            });
-          } else {
+          // if (model.status == 'draft' || model.status == 'on progress') {
+          //   Navigator.of(context)
+          //       .push(MaterialPageRoute(
+          //           builder: (_) => NewTransactionPage(initial: model)))
+          //       .then((saved) {
+          //     if (saved == true) _load();
+          //   });
+          // } else {
             Navigator.of(context)
                 .push(MaterialPageRoute(
                     builder: (_) => TransactionDetailPage(model: model!)))
                 .then((changed) {
               if (changed == true) _load();
             });
-          }
+          // }
         }
       },
       onLongPress: () async {
@@ -423,16 +588,19 @@ class _TransactionListPageState extends State<TransactionListPage> {
               context: context,
               builder: (ctx) => AlertDialog(
                     title: Text(isDraft ? 'Hapus Draft' : 'Hapus Transaksi'),
-                    content: Text(isDraft
-                        ? 'Hapus transaksi draft ini?'
-                        : 'Hapus transaksi ini?'),
+                    content: SingleChildScrollView(
+                      child: Text(isDraft
+                          ? 'Hapus transaksi draft ini?'
+                          : 'Hapus transaksi ini?'),
+                    ),
                     actions: [
                       TextButton(
                           onPressed: () => Navigator.of(ctx).pop(false),
-                          child: Text('Batal')),
+                          child: Text('Batal', style: TextStyle(color: Colors.amber))),
                       TextButton(
                           onPressed: () => Navigator.of(ctx).pop(true),
-                          child: Text('Hapus'))
+                          child: Text('Hapus',
+                              style: TextStyle(color: Colors.red)))
                     ],
                   ));
           if (confirm == true) {
@@ -547,7 +715,15 @@ class _TransactionListPageState extends State<TransactionListPage> {
         title: Text('Transaction List', style: TextStyle(color: AppColors.brandYellow)),
         // default hamburger appears when Drawer is provided
         actions: [
-          IconButton(icon: Icon(Icons.sync, color: AppColors.brandYellow,), onPressed: _sync),
+          GestureDetector(
+            onTapDown: (_) => _onSyncButtonDown(),
+            onTapUp: (_) => _onSyncButtonUp(),
+            onTapCancel: () => _onSyncButtonCancel(),
+            child: IconButton(
+              icon: Icon(Icons.sync, color: AppColors.brandYellow),
+              onPressed: null, // handled by GestureDetector
+            ),
+          ),
           if (_hasFilters)
             IconButton(
                 icon: Icon(Icons.clear, color: AppColors.brandYellow,),

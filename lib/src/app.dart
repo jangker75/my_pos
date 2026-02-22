@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
+import 'package:flutter/rendering.dart';
 import 'ui/transaction_list_page.dart';
 import 'theme.dart';
 import 'bloc/product/product_bloc.dart';
@@ -9,7 +10,13 @@ import 'bloc/transaction/transaction_bloc.dart';
 import 'repository/product_repository.dart';
 import 'repository/customer_repository.dart';
 import 'repository/transaction_repository.dart';
+
 class MyApp extends StatelessWidget {
+  MyApp() {
+    // Enable debug painting to show borders on all widgets
+    debugPaintSizeEnabled = false;
+  }
+  
   @override
   Widget build(BuildContext context) {
     return MultiBlocProvider(
@@ -30,6 +37,7 @@ class MyApp extends StatelessWidget {
             title: 'My POS',
             theme: AppTheme.lightTheme,
             home: TransactionListPage(),
+            debugShowCheckedModeBanner: false,
           );
         },
       ),

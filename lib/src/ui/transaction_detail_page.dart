@@ -1,4 +1,7 @@
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
+import 'package:my_pos/src/ui/new_transaction_page.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 import '../models/transaction_model.dart';
 import '../data/transaction_db.dart';
@@ -16,6 +19,7 @@ class TransactionDetailPage extends StatefulWidget {
 class _TransactionDetailPageState extends State<TransactionDetailPage> {
   final _db = TransactionDb();
   final _printer = ReceiptPrinterService();
+  TransactionModel? _currentModel;
 
   String _formatCurrency(double value) {
     final s = value.toInt().toString();
@@ -133,9 +137,26 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
     Navigator.of(context).pop(true);
   }
 
+  // initialize expanded groups after load
+  @override
+  void initState() {
+    super.initState();
+    log("Model : " + widget.model.toJson().toString());
+    _loadTransaction();
+  }
+
+  Future<void> _loadTransaction() async {
+    final freshData = await _db.getTransactionByTxnNumber(widget.model.txnNumber);
+    if (freshData != null && mounted) {
+      setState(() {
+        _currentModel = freshData;
+      });
+      log("Fresh Model from DB: " + freshData.toJson().toString());
+    }
+  }
   @override
   Widget build(BuildContext context) {
-    final model = widget.model;
+    final model = _currentModel ?? widget.model;
     final items = model.getItemsList();
     DateTime _parse(String s) => DateTime.tryParse(s) ?? DateTime.now();
     String _fmt(DateTime dt) =>
@@ -147,6 +168,22 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
         title: Text('Transaksi ${model.txnNumber}',
             style: TextStyle(color: AppColors.brandYellow)),
         actions: [
+          if (model.status == 'draft' || model.status == 'on progress') 
+          IconButton(
+            onPressed: () async {
+              final saved = await Navigator.of(context).push<bool>(
+                MaterialPageRoute(
+                  builder: (_) => NewTransactionPage(initial: model)
+                )
+              );
+              if (saved == true) {
+                await _loadTransaction();
+                // Notify parent (transaction list) that data changed
+                if (mounted) Navigator.of(context).pop(true);
+              }
+            },
+            icon: Icon(Icons.create_rounded, color: AppColors.brandYellow)
+          ),
           model.status != 'on progress'
               ? SizedBox.shrink()
               :

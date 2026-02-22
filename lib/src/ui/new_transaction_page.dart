@@ -33,7 +33,7 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
   void initState() {
     super.initState();
     _loadProducts();
-    log("widget.initial: ${widget.initial}");
+    log("widget.initial: ${widget.initial?.toJson().toString()}");
     // pastikan CustomerBloc memuat data pelanggan untuk dropdown/autocomplete
     context.read<CustomerBloc>().add(LoadCustomers());
     _customerFocusNode.addListener(_onCustomerFocus);
@@ -197,9 +197,10 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
         log("data updated: ${updated.toJson()}");
         await _db.updateTransaction(updated);
       } else {
-        final model = TransactionModel.createNew(
+        final model = await TransactionModel.createNewWithValidation(
             itemsList: _cart,
             total: total.toDouble(),
+            dbProvider: _db,
             customer: _customerController.text.trim());
         final withNotes = TransactionModel(
           id: model.id,
@@ -240,10 +241,11 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
       // update suggestions list once per build
       _customerSuggestions
         ..clear()
+        ..add("")
         ..add('Umum')
         ..addAll(names.where((n) => n.toLowerCase() != 'umum'));
       if (_customerController.text.isEmpty) {
-        _customerController.text = 'Umum';
+        _customerController.text = '';
       }
     }
 
@@ -251,6 +253,8 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
     final isEditing = widget.initial != null;
     final txnNumber = widget.initial?.txnNumber ?? '';
     final isOnProgress = isEditing && widget.initial!.status == 'on progress';
+    
+    log("BUILD - isEditing: $isEditing, status: '${widget.initial?.status}', isOnProgress: $isOnProgress");
 
     return Scaffold(
       appBar: AppBar(
@@ -263,66 +267,77 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
           icon: Icon(Icons.arrow_back, color: AppColors.brandYellow),
           onPressed: () => Navigator.pop(context),
         ),
-        actions: [
-          if (isOnProgress)
-          IconButton(
-            icon: Icon(Icons.create_rounded, color: AppColors.brandYellow),
-            onPressed: () async {
-              final changed = await Navigator.of(context).push<bool>(
-                MaterialPageRoute(
-                  builder: (_) => TransactionDetailPage(
-                    model: widget.initial!,
-                  ),
-                ),
-              );
+        // actions: [
+        //   if (isOnProgress)
+        //   IconButton(
+        //     icon: Icon(Icons.create_rounded, color: AppColors.brandYellow),
+        //     onPressed: () async {
+        //       final changed = await Navigator.of(context).push<bool>(
+        //         MaterialPageRoute(
+        //           builder: (_) => TransactionDetailPage(
+        //             model: widget.initial!,
+        //           ),
+        //         ),
+        //       );
 
-              if (changed == true && mounted) {
-                Navigator.of(context).pop(true);
-              }
-            },
-          ),
-        ],
+        //       if (changed == true && mounted) {
+        //         Navigator.of(context).pop(true);
+        //       }
+        //     },
+        //   ),
+        // ],
       ),
-      body: Padding(
-        padding: EdgeInsets.all(3.w),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: EdgeInsets.all(3.w),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
             // Customer field
             Text('Customer', style: TextStyle(fontWeight: FontWeight.bold)),
             SizedBox(height: 1.2.h),
-            Autocomplete<String>(
+            RawAutocomplete<String>(
+              textEditingController: _customerController,
+              focusNode: _customerFocusNode,
               optionsBuilder: (TextEditingValue textEditingValue) {
                 final input = textEditingValue.text.toLowerCase();
-                if (input.isEmpty) return _customerSuggestions;
+                log("input : " + input);
+                if (input.isEmpty) return const Iterable<String>.empty();
                 return _customerSuggestions.where((s) =>
                     s.toLowerCase().contains(input));
               },
               onSelected: (String selection) {
-                // copy selection to primary controller used elsewhere
                 _customerController.text = selection;
-                // rebuild to update suffix icon
                 setState(() {});
+              },
+              optionsViewBuilder: (BuildContext context, AutocompleteOnSelected<String> onSelected, Iterable<String> options) {
+                return Align(
+                  alignment: Alignment.topLeft,
+                  child: Material(
+                    elevation: 4,
+                    child: SizedBox(
+                      width: MediaQuery.of(context).size.width * 0.9,
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: options.length,
+                        itemBuilder: (BuildContext context, int index) {
+                          final option = options.elementAt(index);
+                          return ListTile(
+                            title: Text(option),
+                            onTap: () => onSelected(option),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                );
               },
               fieldViewBuilder: (context, textEditingController, focusNode,
                   onFieldSubmitted) {
-                // keep internal autocomplete controller and our _customerController
-                // in sync so existing logic keeps working
-                // add a one-time listener to propagate changes
-                if (textEditingController.text != _customerController.text) {
-                  textEditingController.text = _customerController.text;
-                }
-
-                textEditingController.addListener(() {
-                  if (_customerController.text != textEditingController.text) {
-                    _customerController.text = textEditingController.text;
-                  }
-                });
-
                 return TextField(
                   key: _customerFieldKey,
                   controller: textEditingController,
-                  focusNode: _customerFocusNode,
+                  focusNode: focusNode,
                   onSubmitted: (_) => onFieldSubmitted(),
                   decoration: InputDecoration(
                     hintText: 'Nama pelanggan',
@@ -332,13 +347,11 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
                     suffixIcon: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (textEditingController.text.isNotEmpty)
+                        // if (textEditingController.text.isNotEmpty)
                           IconButton(
                             icon: Icon(Icons.clear),
                             onPressed: () {
-                              textEditingController.clear();
                               _customerController.clear();
-                              // update UI
                               setState(() {});
                             },
                           ),
@@ -353,7 +366,7 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
               },
             ),
             SizedBox(height: 1.8.h),
-
+      
             // Notes field
             Text('Catatan (opsional)',
                 style: TextStyle(fontWeight: FontWeight.bold)),
@@ -369,7 +382,6 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
               ),
             ),
             SizedBox(height: 1.8.h),
-
             // Items header
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -435,7 +447,7 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
                                 ],
                               );
                             });
-
+      
                         if (query != null && query.isNotEmpty) {
                           final results = _products
                               .where((p) => (p['name'] as String)
@@ -447,7 +459,7 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
                                 content: Text('Produk tidak ditemukan')));
                             return;
                           }
-
+      
                           final picked =
                               await showModalBottomSheet<Map<String, dynamic>>(
                                   context: context,
@@ -467,7 +479,7 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
                                       },
                                     );
                                   });
-
+      
                           if (picked != null) {
                             setState(() {
                               _cart.add({
@@ -505,7 +517,7 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
                                     },
                                   );
                                 });
-
+      
                         if (picked != null) {
                           setState(() {
                             _cart.add({
@@ -523,9 +535,10 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
                 ),
               ],
             ),
-
+      
             // Items list
-            Expanded(
+            SizedBox(
+              height: 50.h,
               child: Card(
                 elevation: 1,
                 child: ListView.separated(
@@ -762,7 +775,7 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
                                 );
                               });
                             });
-
+      
                         if (result != null) {
                           setState(() {
                             _cart[index]['qty'] =
@@ -787,10 +800,11 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
                 ),
               ),
             ),
-
+      
             // Summary row moved to bottomBar
             SizedBox(height: 1.8.h),
           ],
+          ),
         ),
       ),
       floatingActionButton: null,
@@ -817,7 +831,7 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
               ),
               ElevatedButton.icon(
                 icon: Icon(Icons.payment, color: AppColors.brandDark),
-                label: Text('Checkout', style: TextStyle(color: AppColors.brandDark)),
+                label: Text((!isOnProgress ? 'Checkout' : "Edit"), style: TextStyle(color: AppColors.brandDark)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.brandYellow,
                   foregroundColor: AppColors.brandDark,
@@ -836,7 +850,7 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
                       actionsPadding:
                           EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       title: Text(
-                        'Konfirmasi Checkout',
+                        'Konfirmasi ${isOnProgress ? "Edit" : "Checkout"}',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 18,
@@ -844,7 +858,7 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
                         ),
                       ),
                       content: Text(
-                        'Yakin ingin menyimpan transaksi dan checkout?',
+                        "Yakin ingin menyimpan transaksi ${isOnProgress ? "" : "dan checkout"}?",
                         style: TextStyle(
                           fontSize: 14,
                           color: AppColors.brandDark,
@@ -867,7 +881,7 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
                             ),
                           ),
                           onPressed: () => Navigator.of(ctx).pop(true),
-                          child: Text('Ya, Checkout'),
+                          child: Text('Ya, ${isOnProgress ? "Edit" : "Checkout"}'),
                         ),
                       ],
                     ),
@@ -899,9 +913,10 @@ class _NewTransactionPageState extends State<NewTransactionPage> {
                       );
                       await _db.updateTransaction(updated);
                     } else {
-                      final model = TransactionModel.createNew(
+                      final model = await TransactionModel.createNewWithValidation(
                           itemsList: _cart,
                           total: total.toDouble(),
+                          dbProvider: _db,
                           customer: _customerController.text.trim());
                       // override status to draft
                       final draft = TransactionModel(
